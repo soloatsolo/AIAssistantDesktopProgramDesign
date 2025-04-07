@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLineEdit, QPushButton, QMenu, QMessageBox, QTextBrowser, QFileDialog
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLineEdit, QPushButton, QMenu, QMessageBox, QTextBrowser, QFileDialog, QLabel
 from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtGui import QAction
 from .character_widget import CharacterWidget
@@ -170,6 +170,43 @@ class MainWindow(QMainWindow):
         # Buttons container with improved styling
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(10)
+        
+        # Add voice input toggle button
+        self.voice_input_btn = QPushButton("🎤")
+        self.voice_input_btn.setCheckable(True)
+        self.voice_input_btn.setToolTip(self.tr("toggle_voice_input"))
+        self.voice_input_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(52, 152, 219, 180);
+                color: white;
+                border-radius: 8px;
+                padding: 8px 15px;
+                font-size: 16px;
+                border: none;
+            }
+            QPushButton:checked {
+                background-color: rgba(231, 76, 60, 180);
+            }
+            QPushButton:hover {
+                background-color: rgba(52, 152, 219, 220);
+            }
+            QPushButton:checked:hover {
+                background-color: rgba(231, 76, 60, 220);
+            }
+        """)
+        self.voice_input_btn.clicked.connect(self.toggle_voice_input)
+        buttons_layout.addWidget(self.voice_input_btn)
+        
+        # Add listening indicator
+        self.listening_label = QLabel("")
+        self.listening_label.setStyleSheet("""
+            QLabel {
+                color: rgba(231, 76, 60, 180);
+                font-size: 12px;
+                font-style: italic;
+            }
+        """)
+        buttons_layout.addWidget(self.listening_label)
         
         self.save_chat_btn = QPushButton(f"💾 {self.tr('save_chat')}")
         self.save_chat_btn.clicked.connect(self.save_chat_history)
@@ -498,7 +535,27 @@ class MainWindow(QMainWindow):
                 self.ai_handler.tts_engine.setProperty('volume', volume)
                 self.ai_handler.tts_engine.setProperty('rate', rate)
         
+    def toggle_voice_input(self):
+        """Toggle voice input on/off"""
+        if not self.ai_handler:
+            self.show_api_key_message()
+            self.voice_input_btn.setChecked(False)
+            return
+            
+        if self.voice_input_btn.isChecked():
+            self.ai_handler.start_listening()
+            self.listening_label.setText(self.tr("listening"))
+            self.character_widget.set_state(AIState.LISTENING)
+        else:
+            self.ai_handler.stop_listening()
+            self.listening_label.setText("")
+            self.character_widget.set_state(AIState.IDLE)
+            
     def closeEvent(self, event):
+        # Stop voice input if active
+        if self.ai_handler and hasattr(self.ai_handler, 'is_listening'):
+            self.ai_handler.stop_listening()
+            
         # Save window geometry
         geometry = self.geometry()
         self.config.set('window.position_x', geometry.x())

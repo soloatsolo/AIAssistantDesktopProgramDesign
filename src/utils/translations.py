@@ -60,6 +60,13 @@ class Translations:
             "configure_api_key": "يرجى إعداد مفتاح OpenAI API في الإعدادات لاستخدام المساعد.",
             "error": "خطأ",
             "success": "تم بنجاح",
+            
+            # Voice Input
+            "toggle_voice_input": "تفعيل/تعطيل الإدخال الصوتي",
+            "listening": "جاري الاستماع...",
+            "speech_recognition_error": "خطأ في التعرف على الصوت",
+            "microphone_error": "خطأ في الوصول إلى الميكروفون",
+            "offline_recognition": "التعرف على الصوت غير متصل",
         },
         "en": {
             # General
@@ -121,6 +128,13 @@ class Translations:
             "configure_api_key": "Please configure your OpenAI API key in settings to use the assistant.",
             "error": "Error",
             "success": "Success",
+            
+            # Voice Input
+            "toggle_voice_input": "Toggle Voice Input",
+            "listening": "Listening...",
+            "speech_recognition_error": "Speech Recognition Error",
+            "microphone_error": "Error accessing microphone",
+            "offline_recognition": "Offline Recognition",
         }
     }
 

@@ -10,6 +10,8 @@ from datetime import datetime
 import hashlib
 import os
 import pickle
+import nltk
+import threading
 
 class AIState(Enum):
     IDLE = "idle"
@@ -30,6 +32,9 @@ class AIHandler:
         if not api_key:
             raise AIError("OpenAI API key is required")
             
+        # Initialize NLTK data
+        self._initialize_nltk()
+            
         try:
             self.client = openai.OpenAI(api_key=api_key)
         except Exception as e:
@@ -41,8 +46,12 @@ class AIHandler:
         except Exception as e:
             raise AIError(f"Failed to initialize text-to-speech engine: {str(e)}")
         
-        # Initialize STT recognizer
+        # Initialize STT recognizer with noise adjustment
         self.recognizer = sr.Recognizer()
+        self.recognizer.dynamic_energy_threshold = True
+        self.recognizer.energy_threshold = 4000
+        self.is_listening = False
+        
         self.state = AIState.IDLE
         
         self.conversation_history: List[Dict] = []
@@ -54,6 +63,37 @@ class AIHandler:
         self.cache_file = os.path.join(self.cache_dir, 'response_cache.pkl')
         self.load_cache()
         
+    def _initialize_nltk(self):
+        """Initialize NLTK data required for TextBlob"""
+        try:
+            nltk.data.find('tokenizers/punkt')
+        except LookupError:
+            print("Downloading required NLTK data...")
+            nltk.download('punkt', quiet=True)
+            
+    def start_listening(self) -> None:
+        """Start background listening for speech"""
+        if not self.is_listening:
+            self.is_listening = True
+            threading.Thread(target=self._listen_continuously, daemon=True).start()
+            
+    def stop_listening(self) -> None:
+        """Stop background listening"""
+        self.is_listening = False
+        
+    def _listen_continuously(self) -> None:
+        """Continuous listening function for background thread"""
+        while self.is_listening:
+            try:
+                text = self.speech_to_text()
+                if text:
+                    # Process the recognized text
+                    print(f"Recognized: {text}")
+                    # Here you could emit a signal or use a callback
+            except Exception as e:
+                print(f"Listening error: {e}")
+                continue
+    
     def load_cache(self):
         """Load response cache from file"""
         try:
@@ -203,17 +243,33 @@ class AIHandler:
             raise AIError(f"Text-to-speech error: {str(e)}")
     
     def speech_to_text(self) -> str:
-        """Convert speech to text"""
+        """Convert speech to text with improved error handling"""
         try:
             with sr.Microphone() as source:
+                # Adjust for ambient noise
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
                 print("Listening...")
-                audio = self.recognizer.listen(source)
-                text = self.recognizer.recognize_google(audio)
-                return text
-        except sr.UnknownValueError:
-            raise AIError("Could not understand audio")
-        except sr.RequestError as e:
-            raise AIError(f"Speech recognition service error: {str(e)}")
+                
+                try:
+                    # Set timeout and phrase time limit
+                    audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                except sr.WaitTimeoutError:
+                    return ""
+                
+                try:
+                    # Try with Google's speech recognition first
+                    text = self.recognizer.recognize_google(audio, language="ar-AR")
+                    return text
+                except sr.UnknownValueError:
+                    return ""
+                except sr.RequestError:
+                    # Fallback to offline recognition if available
+                    try:
+                        text = self.recognizer.recognize_sphinx(audio, language="ar")
+                        return text
+                    except:
+                        raise AIError("Speech recognition services unavailable")
+                        
         except Exception as e:
             raise AIError(f"Speech-to-text error: {str(e)}")
             
