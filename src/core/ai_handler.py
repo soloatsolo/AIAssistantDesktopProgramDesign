@@ -7,6 +7,9 @@ from utils.logger import AIAssistantError
 from textblob import TextBlob
 import json
 from datetime import datetime
+import hashlib
+import os
+import pickle
 
 class AIState(Enum):
     IDLE = "idle"
@@ -45,6 +48,49 @@ class AIHandler:
         self.conversation_history: List[Dict] = []
         self.max_history_length = 10  # Keep last 10 exchanges
         
+        # Initialize response cache
+        self.cache_dir = os.path.join('cache')
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.cache_file = os.path.join(self.cache_dir, 'response_cache.pkl')
+        self.load_cache()
+        
+    def load_cache(self):
+        """Load response cache from file"""
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, 'rb') as f:
+                    self.response_cache = pickle.load(f)
+            else:
+                self.response_cache = {}
+        except Exception:
+            self.response_cache = {}
+            
+    def save_cache(self):
+        """Save response cache to file"""
+        try:
+            with open(self.cache_file, 'wb') as f:
+                pickle.dump(self.response_cache, f)
+        except Exception as e:
+            print(f"Error saving cache: {e}")
+            
+    def get_cache_key(self, text: str, context: List[Dict]) -> str:
+        """Generate a cache key from input text and context"""
+        # Create a string that includes the input and relevant context
+        context_str = ""
+        if context:
+            # Only include the last 2 exchanges for cache key
+            recent_context = context[-4:]
+            context_str = json.dumps([
+                {'role': msg['role'], 'content': msg['content']}
+                for msg in recent_context
+            ])
+            
+        # Combine input and context
+        combined = f"{text}|{context_str}"
+        
+        # Generate hash
+        return hashlib.md5(combined.encode()).hexdigest()
+        
     async def process_text_input(self, text: str) -> Tuple[str, AIState]:
         """Process text input and return response and emotional state"""
         if not text.strip():
@@ -52,6 +98,28 @@ class AIHandler:
             
         try:
             self.state = AIState.PROCESSING
+            
+            # Check cache first
+            cache_key = self.get_cache_key(text, self.conversation_history)
+            if cache_key in self.response_cache:
+                cached_response = self.response_cache[cache_key]
+                # Add to conversation history
+                self.conversation_history.append({
+                    "role": "user",
+                    "content": text,
+                    "timestamp": datetime.now().isoformat()
+                })
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": cached_response,
+                    "timestamp": datetime.now().isoformat(),
+                    "cached": True
+                })
+                
+                # Analyze sentiment and return
+                sentiment = TextBlob(cached_response).sentiment.polarity
+                state = self._get_state_from_sentiment(sentiment, cached_response)
+                return cached_response, state
             
             # Add user message to history
             self.conversation_history.append({
@@ -81,6 +149,10 @@ class AIHandler:
                 
             response_text = response.choices[0].message.content
             
+            # Cache the response
+            self.response_cache[cache_key] = response_text
+            self.save_cache()
+            
             # Add assistant response to history
             self.conversation_history.append({
                 "role": "assistant",
@@ -88,20 +160,15 @@ class AIHandler:
                 "timestamp": datetime.now().isoformat()
             })
             
+            # Trim history if too long
+            if len(self.conversation_history) > self.max_history_length * 2:
+                self.conversation_history = self.conversation_history[-self.max_history_length * 2:]
+            
             self.state = AIState.RESPONDING
             
             # Analyze emotion in response
-            blob = TextBlob(response_text)
-            sentiment = blob.sentiment.polarity
-            
-            if sentiment > 0.3:
-                state = AIState.HAPPY
-            elif sentiment < -0.3:
-                state = AIState.SAD
-            elif "?" in response_text or "not sure" in response_text.lower():
-                state = AIState.CONFUSED
-            else:
-                state = AIState.IDLE
+            sentiment = TextBlob(response_text).sentiment.polarity
+            state = self._get_state_from_sentiment(sentiment, response_text)
             
             return response_text, state
             
@@ -112,6 +179,17 @@ class AIHandler:
         except Exception as e:
             self.state = AIState.ERROR
             raise AIError(f"Error processing input: {str(e)}")
+    
+    def _get_state_from_sentiment(self, sentiment: float, text: str) -> AIState:
+        """Determine AI state based on sentiment and text content"""
+        if sentiment > 0.3:
+            return AIState.HAPPY
+        elif sentiment < -0.3:
+            return AIState.SAD
+        elif "?" in text or "not sure" in text.lower():
+            return AIState.CONFUSED
+        else:
+            return AIState.IDLE
     
     def text_to_speech(self, text: str):
         """Convert text to speech"""

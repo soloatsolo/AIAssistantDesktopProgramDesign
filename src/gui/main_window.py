@@ -16,10 +16,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.logger = Logger()
         self.config = Config()
+        self.tr = lambda key: Translations.get_string(key, self.config.get('appearance.language', 'ar'))
         
         # Create UI elements first
         self.setup_ui()
         self.setup_menu()
+        self.apply_theme()
         
         # Initialize handlers
         try:
@@ -52,6 +54,43 @@ class MainWindow(QMainWindow):
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         msg.exec()
         
+    def apply_theme(self):
+        theme = self.config.get('appearance.theme', 'light')
+        if theme == 'dark':
+            self.setStyleSheet("""
+                QMainWindow, QWidget {
+                    background-color: transparent;
+                }
+                QTextBrowser {
+                    background-color: rgba(44, 44, 44, 200);
+                    color: #ffffff;
+                    border: 1px solid rgba(85, 85, 85, 100);
+                }
+                QLineEdit {
+                    background-color: rgba(44, 44, 44, 200);
+                    color: #ffffff;
+                    border: 1px solid rgba(85, 85, 85, 100);
+                }
+                QPushButton {
+                    background-color: rgba(68, 68, 68, 180);
+                    color: #ffffff;
+                    border: 1px solid rgba(85, 85, 85, 100);
+                }
+                QPushButton:hover {
+                    background-color: rgba(85, 85, 85, 220);
+                }
+                QMenu {
+                    background-color: #2c2c2c;
+                    color: #ffffff;
+                    border: 1px solid #555555;
+                }
+                QMenu::item:selected {
+                    background-color: #555555;
+                }
+            """)
+        else:
+            self.setStyleSheet("")  # Reset to default light theme
+    
     def setup_ui(self):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | 
@@ -64,7 +103,13 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Add resize handles
+        self.setMinimumSize(250, 350)
+        self.resize_area = 10
+        self.resizing = False
+        self.resize_edge = None
         
         # Add character widget
         self.character_widget = CharacterWidget()
@@ -103,7 +148,7 @@ class MainWindow(QMainWindow):
         
         # Improved input field styling
         self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("اكتب رسالتك هنا...")
+        self.input_field.setPlaceholderText(self.tr("type_message"))
         self.input_field.setStyleSheet("""
             QLineEdit {
                 background-color: rgba(255, 255, 255, 200);
@@ -126,7 +171,7 @@ class MainWindow(QMainWindow):
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(10)
         
-        self.save_chat_btn = QPushButton("💾 حفظ المحادثة")
+        self.save_chat_btn = QPushButton(f"💾 {self.tr('save_chat')}")
         self.save_chat_btn.clicked.connect(self.save_chat_history)
         self.save_chat_btn.setStyleSheet("""
             QPushButton {
@@ -147,7 +192,7 @@ class MainWindow(QMainWindow):
         """)
         buttons_layout.addWidget(self.save_chat_btn)
         
-        self.clear_chat_btn = QPushButton("🗑️ مسح")
+        self.clear_chat_btn = QPushButton(f"🗑️ {self.tr('clear_chat')}")
         self.clear_chat_btn.clicked.connect(self.clear_chat_history)
         self.clear_chat_btn.setStyleSheet("""
             QPushButton {
@@ -179,49 +224,129 @@ class MainWindow(QMainWindow):
         self.old_pos = None
         
     def setup_menu(self):
-        # Create context menu
+        # Create context menu with translations
         self.context_menu = QMenu(self)
         
-        # Add actions
-        settings_action = QAction("Settings", self)
+        settings_action = QAction(self.tr("settings"), self)
         settings_action.triggered.connect(self.show_settings)
         self.context_menu.addAction(settings_action)
         
-        exit_action = QAction("Exit", self)
+        exit_action = QAction(self.tr("exit"), self)
         exit_action.triggered.connect(self.close)
         self.context_menu.addAction(exit_action)
         
-        # Add chat history actions
         self.context_menu.addSeparator()
-        save_chat_action = QAction("Save Chat History", self)
+        
+        save_chat_action = QAction(self.tr("save_chat"), self)
         save_chat_action.triggered.connect(self.save_chat_history)
         self.context_menu.addAction(save_chat_action)
         
-        load_chat_action = QAction("Load Chat History", self)
+        load_chat_action = QAction(self.tr("load_chat"), self)
         load_chat_action.triggered.connect(self.load_chat_history)
         self.context_menu.addAction(load_chat_action)
         
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.old_pos = event.globalPosition().toPoint()
+            pos = event.pos()
+            # Check if click is in resize area
+            if pos.x() <= self.resize_area:
+                if pos.y() <= self.resize_area:
+                    self.resize_edge = 'top-left'
+                elif pos.y() >= self.height() - self.resize_area:
+                    self.resize_edge = 'bottom-left'
+                else:
+                    self.resize_edge = 'left'
+            elif pos.x() >= self.width() - self.resize_area:
+                if pos.y() <= self.resize_area:
+                    self.resize_edge = 'top-right'
+                elif pos.y() >= self.height() - self.resize_area:
+                    self.resize_edge = 'bottom-right'
+                else:
+                    self.resize_edge = 'right'
+            elif pos.y() <= self.resize_area:
+                self.resize_edge = 'top'
+            elif pos.y() >= self.height() - self.resize_area:
+                self.resize_edge = 'bottom'
+            else:
+                self.resize_edge = None
+                self.old_pos = event.globalPosition().toPoint()
         elif event.button() == Qt.MouseButton.RightButton:
             self.context_menu.popup(event.globalPosition().toPoint())
-    
+            
     def mouseMoveEvent(self, event):
-        if self.old_pos:
-            delta = QPoint(event.globalPosition().toPoint() - self.old_pos)
+        if not event.buttons() & Qt.MouseButton.LeftButton:
+            # Update cursor shape based on position
+            pos = event.pos()
+            if pos.x() <= self.resize_area or pos.x() >= self.width() - self.resize_area:
+                if pos.y() <= self.resize_area or pos.y() >= self.height() - self.resize_area:
+                    self.setCursor(Qt.CursorShape.SizeFDiagCursor if 
+                                 (pos.x() <= self.resize_area and pos.y() <= self.resize_area) or
+                                 (pos.x() >= self.width() - self.resize_area and pos.y() >= self.height() - self.resize_area)
+                                 else Qt.CursorShape.SizeBDiagCursor)
+                else:
+                    self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif pos.y() <= self.resize_area or pos.y() >= self.height() - self.resize_area:
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+            
+        if self.resize_edge:
+            # Handle resizing
+            delta = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            new_width = self.width()
+            new_height = self.height()
+            new_x = self.x()
+            new_y = self.y()
+            
+            if 'left' in self.resize_edge:
+                new_width = max(self.minimumWidth(), self.width() - delta.x())
+                new_x = self.x() + self.width() - new_width
+            elif 'right' in self.resize_edge:
+                new_width = max(self.minimumWidth(), delta.x())
+                
+            if 'top' in self.resize_edge:
+                new_height = max(self.minimumHeight(), self.height() - delta.y())
+                new_y = self.y() + self.height() - new_height
+            elif 'bottom' in self.resize_edge:
+                new_height = max(self.minimumHeight(), delta.y())
+                
+            self.setGeometry(new_x, new_y, new_width, new_height)
+        elif self.old_pos:
+            # Handle window dragging
+            delta = event.globalPosition().toPoint() - self.old_pos
             self.move(self.pos() + delta)
             self.old_pos = event.globalPosition().toPoint()
-    
+            
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self.resize_edge = None
             self.old_pos = None
-            # Save new position to config
-            pos = self.pos()
-            self.config.set('window.position_x', pos.x())
-            self.config.set('window.position_y', pos.y())
+            # Save new position and size to config
+            geometry = self.geometry()
+            self.config.set('window.position_x', geometry.x())
+            self.config.set('window.position_y', geometry.y())
+            self.config.set('window.width', geometry.width())
+            self.config.set('window.height', geometry.height())
             self.config.save_config()
             
+    def enterEvent(self, event):
+        # Show resize handles when mouse enters window
+        self.setStyleSheet(self.styleSheet() + """
+            QMainWindow {
+                border: 1px solid rgba(140, 140, 140, 50);
+            }
+        """)
+        
+    def leaveEvent(self, event):
+        # Hide resize handles when mouse leaves window
+        self.setStyleSheet(self.styleSheet().replace("""
+            QMainWindow {
+                border: 1px solid rgba(140, 140, 140, 50);
+            }
+        """, ""))
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        
     async def _handle_command_async(self):
         """Async handler for processing commands"""
         command = self.input_field.text()
@@ -347,6 +472,14 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             # Reload configuration
             self.config = Config()
+            self.tr = lambda key: Translations.get_string(key, self.config.get('appearance.language', 'ar'))
+            
+            # Update UI with new language
+            self.setup_ui()
+            self.setup_menu()
+            
+            # Apply theme
+            self.apply_theme()
             
             # Update AI handler with new API key
             api_key = self.config.get('ai.api_key')

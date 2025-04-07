@@ -24,8 +24,13 @@ wheels/
 logs/
 *.log
 
+# Cache
+cache/
+*.pkl
+
 # Environment variables
 .env
+.env.*
 
 # IDE specific files
 .vscode/
