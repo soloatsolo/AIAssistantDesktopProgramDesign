@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLineEdit, QPushButton, QMenu, QMessageBox
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLineEdit, QPushButton, QMenu, QMessageBox, QTextBrowser, QFileDialog
 from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtGui import QAction
 from .character_widget import CharacterWidget
@@ -70,13 +70,105 @@ class MainWindow(QMainWindow):
         self.character_widget = CharacterWidget()
         layout.addWidget(self.character_widget)
         
-        # Add input field with async connection
+        # Add chat display with improved styling
+        self.chat_display = QTextBrowser()
+        self.chat_display.setStyleSheet("""
+            QTextBrowser {
+                background-color: rgba(255, 255, 255, 200);
+                border-radius: 15px;
+                padding: 10px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                border: 1px solid rgba(200, 200, 200, 100);
+            }
+            QTextBrowser:hover {
+                background-color: rgba(255, 255, 255, 220);
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: rgba(200, 200, 200, 50);
+                width: 8px;
+                margin: 0px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: rgba(140, 140, 140, 150);
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: rgba(140, 140, 140, 200);
+            }
+        """)
+        layout.addWidget(self.chat_display)
+        
+        # Improved input field styling
         self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Type your command...")
+        self.input_field.setPlaceholderText("اكتب رسالتك هنا...")
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 200);
+                border-radius: 10px;
+                padding: 8px 15px;
+                font-size: 14px;
+                border: 1px solid rgba(200, 200, 200, 100);
+            }
+            QLineEdit:focus {
+                background-color: rgba(255, 255, 255, 240);
+                border: 1px solid rgba(140, 68, 173, 150);
+            }
+        """)
         self.input_field.returnPressed.connect(
             partial(qasync.asyncSlot(self._handle_command_async)())
         )
         layout.addWidget(self.input_field)
+        
+        # Buttons container with improved styling
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+        
+        self.save_chat_btn = QPushButton("💾 حفظ المحادثة")
+        self.save_chat_btn.clicked.connect(self.save_chat_history)
+        self.save_chat_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(140, 68, 173, 180);
+                color: white;
+                border-radius: 8px;
+                padding: 8px 15px;
+                font-size: 13px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: rgba(140, 68, 173, 220);
+            }
+            QPushButton:pressed {
+                background-color: rgba(140, 68, 173, 250);
+                padding: 9px 14px 7px 16px;
+            }
+        """)
+        buttons_layout.addWidget(self.save_chat_btn)
+        
+        self.clear_chat_btn = QPushButton("🗑️ مسح")
+        self.clear_chat_btn.clicked.connect(self.clear_chat_history)
+        self.clear_chat_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(231, 76, 60, 180);
+                color: white;
+                border-radius: 8px;
+                padding: 8px 15px;
+                font-size: 13px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: rgba(231, 76, 60, 220);
+            }
+            QPushButton:pressed {
+                background-color: rgba(231, 76, 60, 250);
+                padding: 9px 14px 7px 16px;
+            }
+        """)
+        buttons_layout.addWidget(self.clear_chat_btn)
+        
+        layout.addLayout(buttons_layout)
         
         # Set window position from config
         pos_x = self.config.get('window.position_x', 100)
@@ -98,6 +190,16 @@ class MainWindow(QMainWindow):
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         self.context_menu.addAction(exit_action)
+        
+        # Add chat history actions
+        self.context_menu.addSeparator()
+        save_chat_action = QAction("Save Chat History", self)
+        save_chat_action.triggered.connect(self.save_chat_history)
+        self.context_menu.addAction(save_chat_action)
+        
+        load_chat_action = QAction("Load Chat History", self)
+        load_chat_action.triggered.connect(self.load_chat_history)
+        self.context_menu.addAction(load_chat_action)
         
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -136,8 +238,17 @@ class MainWindow(QMainWindow):
             # Update character state to processing
             self.character_widget.set_state(AIState.PROCESSING)
             
+            # Add user message to chat display
+            self.chat_display.append(f"<p style='color: #2c3e50'><b>You:</b> {command}</p>")
+            
             # Process command through AI
             response, ai_state = await self.ai_handler.process_text_input(command)
+            
+            # Add AI response to chat display
+            self.chat_display.append(f"<p style='color: #8e44ad'><b>Assistant:</b> {response}</p>")
+            self.chat_display.verticalScrollBar().setValue(
+                self.chat_display.verticalScrollBar().maximum()
+            )
             
             # Update character state based on AI response
             if ai_state:
@@ -153,6 +264,83 @@ class MainWindow(QMainWindow):
             self.logger.error(f"Error processing command: {e}")
             self.character_widget.set_state(AIState.ERROR)
             self.show_error_message(str(e))
+            
+    def save_chat_history(self):
+        """Save chat history to a file"""
+        if not self.ai_handler:
+            return
+            
+        try:
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Chat History",
+                "",
+                "JSON Files (*.json);;All Files (*)"
+            )
+            
+            if filename:
+                if not filename.endswith('.json'):
+                    filename += '.json'
+                self.ai_handler.save_conversation_history(filename)
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    "Chat history saved successfully!"
+                )
+        except Exception as e:
+            self.show_error_message(f"Error saving chat history: {str(e)}")
+            
+    def load_chat_history(self):
+        """Load chat history from a file"""
+        if not self.ai_handler:
+            return
+            
+        try:
+            filename, _ = QFileDialog.getOpenFileName(
+                self,
+                "Load Chat History",
+                "",
+                "JSON Files (*.json);;All Files (*)"
+            )
+            
+            if filename:
+                self.ai_handler.load_conversation_history(filename)
+                self.refresh_chat_display()
+        except Exception as e:
+            self.show_error_message(f"Error loading chat history: {str(e)}")
+            
+    def clear_chat_history(self):
+        """Clear chat history"""
+        if not self.ai_handler:
+            return
+            
+        reply = QMessageBox.question(
+            self,
+            "Clear Chat History",
+            "Are you sure you want to clear the chat history?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.ai_handler.clear_conversation_history()
+            self.chat_display.clear()
+            
+    def refresh_chat_display(self):
+        """Refresh the chat display with current conversation history"""
+        self.chat_display.clear()
+        if not self.ai_handler:
+            return
+            
+        for msg in self.ai_handler.conversation_history:
+            if msg["role"] == "user":
+                self.chat_display.append(
+                    f"<p style='color: #2c3e50'><b>You:</b> {msg['content']}</p>"
+                )
+            elif msg["role"] == "assistant":
+                self.chat_display.append(
+                    f"<p style='color: #8e44ad'><b>Assistant:</b> {msg['content']}</p>"
+                )
         
     def show_settings(self):
         dialog = SettingsDialog(self)
