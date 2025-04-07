@@ -1,0 +1,7 @@
+PyQt6>=6.8.1
+openai>=1.70.0
+pyttsx3>=2.98
+SpeechRecognition>=3.14.2
+psutil>=7.0.0
+Pillow>=11.1.0
+qasync>=0.24.0

@@ -1,0 +1,22 @@
+{
+    "character": {
+        "gender": "female",
+        "style": "anime"
+    },
+    "ai": {
+        "model": "gpt-4-turbo-preview",
+        "temperature": 0.7,
+        "api_key": "AIzaSyCJz4IeqQLLz0TEa5IgWPXY9z3EtsJzgDM"
+    },
+    "voice": {
+        "enabled": true,
+        "volume": 1.0,
+        "rate": 150
+    },
+    "window": {
+        "position_x": 1102,
+        "position_y": 549,
+        "width": 300,
+        "height": 400
+    }
+}
